@@ -1,23 +1,31 @@
 {
-    "name": "yuloh/guerilla",
+    "name": "matt-allan/guerilla",
     "description": "A small utility for guerilla patching global PHP functions.",
     "type": "library",
-    "license": "Unlicense",
+    "license": "unlicense",
     "authors": [
         {
             "name": "Matt Allan",
-            "email": "matthew.james.allan@gmail.com"
+            "email": "matt@mattallan.me"
         }
     ],
     "require": {
-        "php": ">=5.6.0"
+        "php": ">=7.4.0"
     },
     "require-dev": {
-        "phpunit/phpunit": "^5.6"
+        "phpunit/phpunit": "^8.0"
     },
     "autoload": {
         "psr-4": {
-            "Yuloh\\Guerilla\\": "src"
+            "MattAllan\\Guerilla\\": "src"
+        },
+        "files": [
+            "src/functions.php"
+        ]
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "MattAllan\\Guerilla\\": "tests"
         }
     }
 }

@@ -1,88 +1,136 @@
 <?php
 
-namespace Yuloh\Guerilla;
+declare(strict_types=1);
 
-class Patch
+namespace MattAllan\Guerilla;
+
+final class Patch
 {
-    /**
-     * @var []
-     */
-    static $patches = [];
+    private static array $registry = [];
 
-    /**
-     * Make a new patch.
-     *
-     * @param string   $namespace
-     * @param string   $functionName
-     * @param callable $callback
-     */
-    public static function make($namespace, $functionName, callable $callback)
+    private array $namespaces = [];
+
+    private string $name;
+
+    private ?\Closure $callback = null;
+
+    private function __construct(string $name)
     {
-        $fqfn                   = static::fqfn($namespace, $functionName);
-        static::$patches[$fqfn] = $callback;
-        if (!function_exists($fqfn)) {
-            eval(static::template($namespace, $functionName));
-        }
+        $this->name = $name;
+    }
+
+    public static function get(string $name): self
+    {
+        return static::$registry[$name] ?? new self($name);
     }
 
     /**
-     * Clear a patch.
-     *
-     * @param string|null $functionName
+     * @return self[]
      */
-    public static function clear($functionName = null)
+    public static function all(): array
     {
-        if (!$functionName) {
-            static::$patches = [];
-            return;
-        }
-
-        static::$patches = array_filter(static::$patches, function ($key) use ($functionName) {
-            return $functionName !== substr($key, -strlen($functionName));
-        }, ARRAY_FILTER_USE_KEY);
+        return array_values(static::$registry);
     }
 
-    /**
-     * @internal
-     *
-     * @param string $namespace
-     * @param string $functionName
-     * @param array $args
-     *
-     * @return mixed
-     */
-    public static function run($namespace, $functionName, array $args)
+    public function for(...$classes): self
     {
-        $fqfn = static::fqfn($namespace, $functionName);
-        if (!isset(static::$patches[$fqfn])) {
-            return call_user_func_array($functionName, $args);
+        return $this->within(
+            ...array_map(
+                fn ($className) => (new \ReflectionClass($className))
+                    ->getNamespaceName(),
+                $classes
+            )
+        );
+    }
+
+    public function within(string ...$namespaces): self
+    {
+        $this->namespaces = $namespaces;
+
+        return $this;
+    }
+
+    public function make(): self
+    {
+        if (empty($this->namespaces)) {
+            throw new \LogicException(
+                'A namespace must be specified to create a patch.'
+            );
         }
 
-        return call_user_func_array(static::$patches[$fqfn], $args);
+        if (!$this->callback) {
+            throw new \LogicException(
+                'A callback must be specified to create a patch.'
+            );
+        }
+
+        static::$registry[$this->name] = $this;
+
+        $template = static::template();
+
+        foreach ($this->namespaces as $namespace) {
+            if (!\function_exists("{$namespace}\\{$this->name}")) {
+                eval("namespace {$namespace} { {$template} }");
+            }
+        }
+
+        return $this;
     }
 
-    /**
-     * @param string $namespace
-     * @param string $functionName
-     *
-     * @return string
-     */
-    private static function fqfn($namespace, $functionName)
+    public function using(\Closure $callback): self
     {
-        return rtrim($namespace, '\\') . '\\' . $functionName;
+       $this->callback = $callback;
+
+       return $this;
     }
 
-    /**
-     * @param string $namespace
-     * @param string $functionName
-     *
-     * @return string
-     */
-    private static function template($namespace, $functionName)
+    public function clear(): void
     {
-       return strtr(file_get_contents(__DIR__ . '/patch.stub'), [
-           '{namespace}'    => $namespace,
-           '{functionName}' => $functionName,
-       ]);
+        unset(static::$registry[$this->name]);
+    }
+
+    public function __invoke(&...$args)
+    {
+        return ($this->callback ?? $this->name)(...$args);
+    }
+
+    public function name(): string
+    {
+        return $this->name;
+    }
+
+    private function template(): string
+    {
+        $className = self::class;
+
+        $parameters = (new \ReflectionFunction($this->callback))
+            ->getParameters();
+
+        $signature = implode(', ', array_map(
+            fn (\ReflectionParameter $p) =>
+                ($p->hasType() && $p->getType()->allowsNull() ? '?' : '').
+                ($p->hasType() ? $p->getType()->getName().' ' : '').
+                ($p->isPassedByReference() ? '&' : '').
+                ($p->isVariadic() ? '...' : '').
+                '$'.
+                $p->name.
+                ($p->isDefaultValueAvailable() ? ' = '.var_export($p->getDefaultValue(), true) : ''),
+            $parameters
+        ));
+
+        $arguments = implode(', ', array_map(
+            fn (\ReflectionParameter $p) =>
+                ($p->isVariadic() ? '...' : '').
+                '$'.
+                $p->name,
+            $parameters
+        ));
+
+        return <<<PHP
+function $this->name($signature)
+{
+    return \\$className::get('$this->name')($arguments);
+}
+PHP;
     }
 }

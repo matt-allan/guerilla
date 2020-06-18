@@ -1,6 +1,0 @@
-namespace {namespace};
-
-function {functionName}()
-{
-  return call_user_func('Yuloh\Guerilla\Patch::run', "{namespace}", "{functionName}", func_get_args());
-}
